@@ -1,19 +1,50 @@
 import { Sequelize } from 'sequelize';
-import initNatsDialect from './dialect';
+import { NatsKvDialect } from './dialect/nats-kv-dialect';
+import { NatsKvConnectionManager, NatsKvConfig } from './dialect/connection-manager';
 
-/**
- * Create a Sequelize instance patched to use NATS KV as the database engine.
- * @param url NATS server URL (e.g., localhost:4222)
- * @param bucket KV bucket name
- */
-export async function createSequelizeWithNats(options: { url: string; bucket: string, useMemory?: boolean }): Promise<Sequelize> {
-  // Use SQLite dialect to satisfy Sequelize, but bypass storage since we use NATS KV
-  const sequelize = new Sequelize('', '', '', {
-    dialect: 'sqlite',
-    storage: ':memory:',
-    dialectOptions: { url: options.url, bucket: options.bucket, useMemory: options.useMemory },
-    logging: false,
+// Register the dialect
+const dialectName = 'nats-kv';
+
+// Extend Sequelize to support our dialect
+class NatsKvSequelize extends Sequelize {
+  constructor(options: any) {
+    super({
+      ...options,
+      dialect: dialectName,
+    });
+  }
+}
+
+// Factory function to create Sequelize instance with NATS KV dialect
+export function createNatsKvSequelize(config: NatsKvConfig): Sequelize {
+  // Patch Sequelize to recognize the custom dialect
+  // @ts-ignore
+  if (typeof (Sequelize as any).addDialect === 'function') {
+    (Sequelize as any).addDialect('nats-kv', NatsKvDialect);
+  } else {
+    // Fallback for older Sequelize versions
+    (Sequelize as any).Dialect = (Sequelize as any).Dialect || {};
+    (Sequelize as any).Dialect['nats-kv'] = NatsKvDialect;
+  }
+
+  const sequelize = new Sequelize({
+    dialect: dialectName as any,
+    dialectModule: NatsKvDialect,
+    dialectOptions: config,
   });
-  await initNatsDialect(sequelize);
+
   return sequelize;
 }
+
+// Export types and classes
+export { NatsKvDialect, NatsKvConnectionManager, NatsKvConfig };
+export { NatsKvConnection } from './dialect/connection';
+export { NatsKvQueryGenerator } from './dialect/query-generator';
+export { NatsKvQueryInterface } from './dialect/query-interface';
+
+// Default export
+export default {
+  createNatsKvSequelize,
+  NatsKvDialect,
+  NatsKvConnectionManager,
+};

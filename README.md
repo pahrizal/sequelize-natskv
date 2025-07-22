@@ -1,69 +1,101 @@
 # sequelize-natskv
 
-A lightweight [Sequelize](https://sequelize.org/) dialect implementation using [NATS Key-Value (KV)](https://docs.nats.io/) as the storage engine. It intercepts standard Sequelize CRUD operations and redirects them to a NATS KV bucket, enabling distributed, event-driven models backed by NATS.
+A lightweight [Sequelize](https://sequelize.org/) dialect-like ORM using [NATS Key-Value (KV)](https://docs.nats.io/) as the storage engine. It provides simple CRUD and query operations on distributed, event-driven models backed by NATS.
+
+---
 
 ## Features
-- Transparent Sequelize `create`, `findByPk`, `update`, `destroy`, and `findAll` operations using NATS KV
-- In-memory KV fallback for local testing
-- Built-in model change subscriptions (`Model.subscribe`) with optional column filters
-- Zero-dependency runtime bundle via [esbuild](https://esbuild.github.io/)
+- Transparent `create`, `findOne`, `findAll`, `update`, and `destroy` operations using NATS KV
+- Supports querying by any field (not just primary key)
+- Model change subscriptions (watch for row/column changes)
+- TypeScript support
+- Simple, dependency-light design
+
+---
 
 ## Installation
 ```bash
-npm install sequelize-natskv sequelize nats sqlite3
+npm install sequelize-natskv nats
 ```
-> If you plan to use PostgreSQL or other dialects alongside NATS KV, install their peer dependencies (e.g., `pg`, `pg-hstore`).
 
-## Usage
+---
+
+## Quick Start
 ```ts
-import { createSequelizeWithNats } from 'sequelize-natskv';
-import { DataTypes } from 'sequelize';
+import { NatsKVSequelize } from 'sequelize-natskv';
 
 async function main() {
-  // Initialize Sequelize patched with NATS KV
-  const sequelize = await createSequelizeWithNats({ url: 'localhost:4222', bucket: 'my-bucket' });
-  
-  // Define a model as usual
+  // Connect to NATS KV
+  const sequelize = new NatsKVSequelize({
+    servers: ['nats://localhost:4222'],
+    bucket: 'my-bucket',
+    // user, pass if needed
+  });
+  await sequelize.authenticate();
+
+  // Define a model
   const User = sequelize.define('User', {
-    id: { type: DataTypes.STRING, primaryKey: true },
-    name: DataTypes.STRING,
-  }, { timestamps: false });
-  
-  // Subscribe to changes (all columns)
-  User.subscribe(event => {
-    console.log('User event:', event);
+    id: { type: 'INTEGER', primaryKey: true },
+    name: { type: 'STRING' },
+    email: { type: 'STRING' },
+    age: { type: 'INTEGER' },
   });
 
-  // Subscribe only on name changes
-  User.subscribe(event => {
-    console.log('Name changed:', event);
-  }, { columns: ['name'] });
+  // Create
+  await User.create({ id: 1, name: 'Alice', email: 'alice@example.com', age: 30 });
 
-  // Perform CRUD operations
-  await User.create({ id: '1', name: 'Alice' });
-  await User.update({ name: 'Bob' }, { where: { id: '1' } });
-  await User.destroy({ where: { id: '1' } });
+  // Find by primary key
+  const alice = await User.findOne({ where: { id: 1 } });
+
+  // Find by non-primary key
+  const byEmail = await User.findOne({ where: { email: 'alice@example.com' } });
+
+  // Find all users with age 30
+  const users = await User.findAll({ where: { age: 30 } });
+
+  // Update
+  await User.update({ age: 31 }, { where: { id: 1 } });
+
+  // Delete
+  await User.destroy({ where: { id: 1 } });
+
+  await sequelize.close();
 }
 ```
 
-## API
+---
 
-### createSequelizeWithNats(options)
-- `options.url` _(string)_: NATS server URL (e.g., `'localhost:4222'`)
-- `options.bucket` _(string)_: KV bucket name
-- **Returns**: `Promise<Sequelize>` – a Sequelize instance patched to use NATS KV
+## NATS Requirements & Limitations
+- Requires a running [NATS server](https://docs.nats.io/nats-server/installation) with JetStream and KV enabled.
+- The specified KV bucket must exist or will be created automatically.
+- Only basic CRUD and simple queries are supported (no joins, aggregates, or advanced Sequelize features).
+- All data is stored as JSON in NATS KV.
 
-### Model.subscribe(callback, [options])
-- `callback(event)` _(function)_: Called on row create/update/destroy. Event object contains:
-  - `operation`: `'create' | 'update' | 'destroy'`
-  - `data`: instance (for create)
-  - `old`, `new`: instances before/after (for update)
-  - `old`: instance before delete (for destroy)
-  - `changedColumns`: `string[]` of modified columns
-- `options.columns` _(string[])_ – filter notifications to events where these columns changed
+---
 
-### Model.unsubscribe(callback)
-- Remove a previously added subscription callback
+## API Reference
+
+### `NatsKVSequelize(options)`
+- `options.servers` (string[]): Array of NATS server URLs
+- `options.bucket` (string): KV bucket name
+- `options.user`, `options.pass` (string, optional): NATS credentials
+
+#### Methods
+- `authenticate()`: Connects to NATS and ensures the KV bucket exists.
+- `define(modelName, attributes, options?)`: Defines a model (returns a Model class).
+- `getModel(modelName)`: Returns a previously defined model.
+- `getKV()`: Returns the underlying NATS KV instance.
+- `close()`: Closes the NATS connection.
+
+### Model Methods
+- `create(values)`: Insert a new record.
+- `findOne({ where })`: Find a single record by any field(s).
+- `findAll({ where })`: Find all records matching any field(s).
+- `update(values, { where })`: Update a record by primary key or other fields.
+- `destroy({ where })`: Delete a record by primary key or other fields.
+- `watch({ where, columns }, callback)`: Subscribe to changes on a row or columns (experimental).
+
+---
 
 ## Development
 ```bash
@@ -77,8 +109,12 @@ npm test
 npm run build
 ```
 
+---
+
 ## Contributing
-Contributions are welcome! Please open issues or pull requests on the [GitHub repository]. Ensure your changes include tests and update documentation as needed.
+Contributions are welcome! Please open issues or pull requests on the [GitHub repository](https://github.com/pahrizal/sequelize-natskv). Ensure your changes include tests and update documentation as needed.
+
+---
 
 ## License
 MIT © Pahrizal Marup

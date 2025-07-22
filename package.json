@@ -1,39 +1,58 @@
 {
   "name": "sequelize-natskv",
   "version": "1.0.0",
+  "description": "A Sequelize dialect for NATS Key-Value store",
   "main": "dist/index.js",
-  "types": "dist/src/index.d.ts",
-  "author": "Pahrizal Marup <pahrizal.marup@alexys.com.au>",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prepare": "yarn build",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix"
+  },
+  "keywords": [
+    "sequelize",
+    "nats",
+    "kv",
+    "key-value",
+    "database",
+    "dialect"
+  ],
+  "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "nats": "^2.29.3",
-    "sequelize": "6",
-    "sqlite3": "^5.1.7",
-    "typescript": "^5.8.3"
+    "nats": "^2.19.0",
+    "sequelize": "^6.35.2"
   },
   "devDependencies": {
-    "@types/jest": "27",
-    "@types/node": "^24.0.15",
-    "esbuild": "^0.19.2",
-    "jest": "27",
-    "npm-run-all": "^4.1.5",
-    "rimraf": "^6.0.1",
-    "ts-jest": "27"
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.9.0",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
+    "eslint": "^8.54.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
   },
-  "scripts": {
-    "test": "jest",
-    "build:clean": "rimraf dist/",
-    "build:types": "tsc --emitDeclarationOnly",
-    "build:bundle": "esbuild src/index.ts --bundle --platform=node --target=es2019 --format=cjs --external:sequelize --external:nats --external:sqlite3 --external:pg-hstore --outfile=dist/index.js",
-    "build": "npm-run-all build:clean build:types build:bundle",
-    "prepare": "npm run build",
-    "postinstall": "npm run build"
+  "peerDependencies": {
+    "sequelize": "^6.0.0"
   },
-  "jest": {
-    "preset": "ts-jest",
-    "testEnvironment": "node",
-    "roots": [
-      "<rootDir>/test"
-    ]
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pahrizal/sequelize-natskv.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pahrizal/sequelize-natskv/issues"
+  },
+  "homepage": "https://github.com/pahrizal/sequelize-natskv#readme",
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
