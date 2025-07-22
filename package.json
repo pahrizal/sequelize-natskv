@@ -26,7 +26,8 @@
     "build:types": "tsc --emitDeclarationOnly",
     "build:bundle": "esbuild src/index.ts --bundle --platform=node --target=es2019 --format=cjs --external:sequelize --external:nats --external:sqlite3 --external:pg-hstore --outfile=dist/index.js",
     "build": "npm-run-all build:clean build:types build:bundle",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "postinstall": "npm run build"
   },
   "jest": {
     "preset": "ts-jest",
