@@ -259,6 +259,66 @@ export class Model {
   }
 
   /**
+   * Truncate all records and indexes for this model.
+   */
+  static async truncate() {
+    const kv: KV = this.sequelize.getKV();
+    // 1. Collect all record values for all shards
+    let allRecords = [];
+    for (let shard = 0; shard < this.SHARD_COUNT; shard++) {
+      const prefix = `${this.modelName}.shard_${shard}.`;
+      const iter = await kv.keys(prefix + '>');
+      for await (const key of iter) {
+        const entry = await kv.get(key);
+        if (entry && entry.value) {
+          try {
+            allRecords.push(JSON.parse(new TextDecoder().decode(entry.value)));
+          } catch {}
+        }
+      }
+    }
+    // 2. Delete/purge all record keys
+    for (let shard = 0; shard < this.SHARD_COUNT; shard++) {
+      const prefix = `${this.modelName}.shard_${shard}.`;
+      const iter = await kv.keys(prefix + '>');
+      for await (const key of iter) {
+        if (kv.purge) {
+          await kv.purge(key);
+        } else {
+          await kv.delete(key);
+        }
+      }
+    }
+    // 3. Delete/purge all index keys for all values seen
+    for (const field of this.indexes) {
+      const seen = new Set();
+      for (const rec of allRecords) {
+        if (rec[field] !== undefined) {
+          seen.add(rec[field]);
+        }
+      }
+      for (const value of seen) {
+        const indexKey = this._buildIndexKey(field, value);
+        if (kv.purge) {
+          await kv.purge(indexKey);
+        } else {
+          await kv.delete(indexKey);
+        }
+      }
+      // 4. Fallback: delete any remaining index keys by prefix
+      const indexPrefix = `${this.modelName}.index.${field}.`;
+      const iter = await kv.keys(indexPrefix + '>');
+      for await (const key of iter) {
+        if (kv.purge) {
+          await kv.purge(key);
+        } else {
+          await kv.delete(key);
+        }
+      }
+    }
+  }
+
+  /**
    * Watch for changes on a row or columns (experimental).
    * @param options - { where?: any; columns?: string[] }
    * @param callback - Function called on change
