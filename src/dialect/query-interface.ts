@@ -131,7 +131,7 @@ export class NatsKvQueryInterface {
     // Convert SQL LIKE pattern to regex
     const regexPattern = pattern
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
-      .replace(/%/g, '.*') // % matches any characters
+      .replace(/%/g, '.>') // % matches any characters
       .replace(/_/g, '.'); // _ matches single character
     
     const regex = new RegExp(`^${regexPattern}$`, 'i');

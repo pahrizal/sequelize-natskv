@@ -99,7 +99,7 @@ export class Model {
     } else {
       for (let shard = 0; shard < this.SHARD_COUNT; shard++) {
         const prefix = `${this.modelName}.shard_${shard}.`;
-        const iter = await kv.keys(prefix + '*');
+        const iter = await kv.keys(prefix + '>');
         for await (const key of iter) {
           const entry = await kv.get(key);
           if (!entry || entry.operation === 'DEL' || entry.operation === 'PURGE') continue;
