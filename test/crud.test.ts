@@ -1,29 +1,57 @@
 import { NatsKVSequelize } from '../src/nats-kv-sequelize';
 import { createModel } from '../src/model';
+const { connect } = require('nats');
+
+async function clearBucket(bucket: any) {
+  // Connect to NATS and clear all keys in the given bucket
+  const nc = await connect({
+    servers: ['nats://127.0.0.1:4222'],
+    user: 'aptus-unity',
+    pass: 'Ry7mP9kL4vB2x5',
+  });
+  const js = nc.jetstream();
+  const kv = await js.views.kv(bucket);
+  const iter = await kv.keys('*');
+  for await (const key of iter) {
+    await kv.delete(key);
+  }
+  await nc.close();
+}
 
 describe('NATS KV ORM CRUD Operations', () => {
-  let sequelize: NatsKVSequelize;
+  let sequelize: any;
   let User: any;
+  const bucket: any = 'unity_crud';
 
   beforeAll(async () => {
+    await clearBucket(bucket);
+    const { NatsKVSequelize } = require('../src/nats-kv-sequelize');
+    const { createModel } = require('../src/model');
     sequelize = new NatsKVSequelize({
       servers: ['nats://127.0.0.1:4222'],
-      bucket: 'unity',
+      bucket,
       user: 'aptus-unity',
       pass: 'Ry7mP9kL4vB2x5',
     });
     await sequelize.authenticate();
-
     User = createModel(sequelize, 'User', {
       id: { type: 'INTEGER', primaryKey: true },
       name: { type: 'STRING' },
       email: { type: 'STRING' },
       age: { type: 'INTEGER' },
     }, {});
+    User.indexes = ['email'];
+  });
+
+  beforeEach(async () => {
+    await clearBucket(bucket);
+    await User.create({ id: 1, name: 'Alice', email: 'alice@example.com', age: 30 });
+    await User.create({ id: 2, name: 'Bob', email: 'bob@example.com', age: 25 });
   });
 
   afterAll(async () => {
     await sequelize.close();
+    await clearBucket(bucket);
   });
 
   it('should create a user', async () => {
@@ -85,25 +113,28 @@ describe('NATS KV ORM CRUD Operations', () => {
 });
 
 describe('NATS KV ORM Non-Primary Key Edge Cases', () => {
-  let sequelize: NatsKVSequelize;
+  let sequelize: any;
   let User: any;
+  const bucket: any = 'unity_edge';
 
   beforeAll(async () => {
+    await clearBucket(bucket);
+    const { NatsKVSequelize } = require('../src/nats-kv-sequelize');
+    const { createModel } = require('../src/model');
     sequelize = new NatsKVSequelize({
       servers: ['nats://127.0.0.1:4222'],
-      bucket: 'unity-edge',
+      bucket,
       user: 'aptus-unity',
       pass: 'Ry7mP9kL4vB2x5',
     });
     await sequelize.authenticate();
-
     User = createModel(sequelize, 'UserEdge', {
       id: { type: 'INTEGER', primaryKey: true },
       name: { type: 'STRING' },
       email: { type: 'STRING' },
       age: { type: 'INTEGER' },
     }, {});
-
+    User.indexes = ['email'];
     // Insert test data
     await User.create({ id: 101, name: 'Eve', email: 'eve@example.com', age: 40 });
     await User.create({ id: 102, name: 'Frank', email: 'frank@example.com', age: 25 });
@@ -113,6 +144,7 @@ describe('NATS KV ORM Non-Primary Key Edge Cases', () => {
 
   afterAll(async () => {
     await sequelize.close();
+    await clearBucket(bucket);
   });
 
   it('should find all users with the same email', async () => {
@@ -151,5 +183,59 @@ describe('NATS KV ORM Non-Primary Key Edge Cases', () => {
     const where = { age: 25, name: 'Frank' };
     const user = await User.findOne({ where });
     expect(user).toMatchObject({ id: 102, name: 'Frank', email: 'frank@example.com', age: 25 });
+  });
+});
+
+describe('NATS KV ORM Multi-Value Indexes', () => {
+  let sequelize: any;
+  let User: any;
+  const bucket: any = 'unity_multivalue';
+
+  beforeAll(async () => {
+    await clearBucket(bucket);
+    const { NatsKVSequelize } = require('../src/nats-kv-sequelize');
+    const { createModel } = require('../src/model');
+    sequelize = new NatsKVSequelize({
+      servers: ['nats://127.0.0.1:4222'],
+      bucket,
+      user: 'aptus-unity',
+      pass: 'Ry7mP9kL4vB2x5',
+    });
+    await sequelize.authenticate();
+    User = createModel(sequelize, 'UserMulti', {
+      id: { type: 'INTEGER', primaryKey: true },
+      name: { type: 'STRING' },
+      email: { type: 'STRING' },
+      age: { type: 'INTEGER' },
+    }, {});
+    User.indexes = ['email'];
+  });
+
+  afterAll(async () => {
+    await sequelize.close();
+    await clearBucket(bucket);
+  });
+
+  it('should support multi-value indexes for email', async () => {
+    // Create two users with the same email
+    const user1 = await User.create({ id: 201, name: 'Eve', email: 'shared@example.com', age: 40 });
+    const user2 = await User.create({ id: 202, name: 'Frank', email: 'shared@example.com', age: 25 });
+    // Find all by email
+    const users = await User.findAll({ where: { email: 'shared@example.com' } });
+    expect(users.length).toBe(2);
+    expect(users).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 201, name: 'Eve' }),
+        expect.objectContaining({ id: 202, name: 'Frank' }),
+      ])
+    );
+    // Find one by email
+    const oneUser = await User.findOne({ where: { email: 'shared@example.com' } });
+    expect([201, 202]).toContain(oneUser.id);
+    // Delete one user
+    await User.destroy({ where: { id: 201 } });
+    const afterDelete = await User.findAll({ where: { email: 'shared@example.com' } });
+    expect(afterDelete.length).toBe(1);
+    expect(afterDelete[0].id).toBe(202);
   });
 });

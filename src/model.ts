@@ -8,6 +8,29 @@ export class Model {
   static modelName: string;
   static attributes: any;
   static options: any;
+  static SHARD_COUNT = 16;
+  static indexes: string[] = [];
+
+  static _getShard(id: number) {
+    return id % this.SHARD_COUNT;
+  }
+
+  /**
+   * Build a storage key for the record (by primary key, sharded).
+   * @param values - The record values
+   * @returns The storage key string
+   */
+  static _buildKey(values: any) {
+    const id = values.id;
+    const shard = this._getShard(id);
+    return `${this.modelName}.shard_${shard}.${id}`;
+  }
+
+  static _buildIndexKey(field: string, value: any) {
+    // Sanitize value for NATS KV key compliance
+    const safeValue = String(value).replace(/[^A-Za-z0-9/_-]/g, '_');
+    return `${this.modelName}.index.${field}.${safeValue}`;
+  }
 
   /**
    * Create a new record in the KV store.
@@ -18,6 +41,22 @@ export class Model {
     const kv: KV = this.sequelize.getKV();
     const key = this._buildKey(values);
     await kv.put(key, new TextEncoder().encode(JSON.stringify(values)));
+    // Maintain indexes (multi-value)
+    for (const field of this.indexes) {
+      if (values[field] !== undefined) {
+        const indexKey = this._buildIndexKey(field, values[field]);
+        let ids: number[] = [];
+        const indexEntry = await kv.get(indexKey);
+        if (indexEntry && indexEntry.value) {
+          const raw = new TextDecoder().decode(indexEntry.value);
+          if (raw.trim()) {
+            ids = JSON.parse(raw);
+          }
+        }
+        if (!ids.includes(values.id)) ids.push(values.id);
+        await kv.put(indexKey, new TextEncoder().encode(JSON.stringify(ids)));
+      }
+    }
     return values;
   }
 
@@ -28,29 +67,47 @@ export class Model {
    */
   static async findOne(query: any) {
     const kv: KV = this.sequelize.getKV();
-    // For simplicity, assume query is { where: { ... } }
     const where = query.where;
+    // If query is on a single indexed field, use the index
+    if (where && Object.keys(where).length === 1) {
+      const field = Object.keys(where)[0];
+      if (this.indexes.includes(field)) {
+        const indexKey = this._buildIndexKey(field, where[field]);
+        const indexEntry = await kv.get(indexKey);
+        if (!indexEntry || !indexEntry.value) return null;
+        let ids: number[] = [];
+        const raw = new TextDecoder().decode(indexEntry.value);
+        if (raw.trim()) {
+          ids = JSON.parse(raw);
+        }
+        for (const id of ids) {
+          const key = this._buildKey({ id });
+          const entry = await kv.get(key);
+          if (entry && entry.value && entry.operation !== 'DEL' && entry.operation !== 'PURGE') {
+            return JSON.parse(new TextDecoder().decode(entry.value));
+          }
+        }
+        return null;
+      }
+    }
+    // Fallback to primary key or full scan
     if (where && Object.keys(where).length === 1 && where.id !== undefined) {
-      // Fast path: lookup by primary key
       const key = this._buildKey(where);
       const entry = await kv.get(key);
       if (!entry || entry.operation === 'DEL' || entry.operation === 'PURGE') return null;
       return JSON.parse(new TextDecoder().decode(entry.value));
     } else {
-      // Slow path: scan all records
-      const prefix = this.modelName + '.';
-      const iter = await kv.keys(prefix + '*');
-      const allKeys = [];
-      for await (const key of iter) {
-        allKeys.push(key);
-      }
-      for (const key of allKeys) {
-        const entry = await kv.get(key);
-        if (!entry || entry.operation === 'DEL' || entry.operation === 'PURGE') continue;
-        const value = JSON.parse(new TextDecoder().decode(entry.value));
-        const match = Object.entries(where).every(([k, v]) => value[k] === v);
-        if (match) {
-          return value;
+      for (let shard = 0; shard < this.SHARD_COUNT; shard++) {
+        const prefix = `${this.modelName}.shard_${shard}.`;
+        const iter = await kv.keys(prefix + '*');
+        for await (const key of iter) {
+          const entry = await kv.get(key);
+          if (!entry || entry.operation === 'DEL' || entry.operation === 'PURGE') continue;
+          const value = JSON.parse(new TextDecoder().decode(entry.value));
+          const match = Object.entries(where).every(([k, v]) => value[k] === v);
+          if (match) {
+            return value;
+          }
         }
       }
       return null;
@@ -64,19 +121,52 @@ export class Model {
    */
   static async findAll(query: any = {}) {
     const kv: KV = this.sequelize.getKV();
-    const prefix = this.modelName + '.';
-    const keys: string[] = [];
-    const iter = await kv.keys(prefix + '*');
-    for await (const key of iter) {
-      keys.push(key);
+    const where = query.where;
+    // If query is on a single indexed field, use the index
+    if (where && Object.keys(where).length === 1) {
+      const field = Object.keys(where)[0];
+      if (this.indexes.includes(field)) {
+        const indexKey = this._buildIndexKey(field, where[field]);
+        const indexEntry = await kv.get(indexKey);
+        if (!indexEntry || !indexEntry.value) return [];
+        let ids: number[] = [];
+        const raw = new TextDecoder().decode(indexEntry.value);
+        if (raw.trim()) {
+          ids = JSON.parse(raw);
+        }
+        const results = [];
+        for (const id of ids) {
+          const key = this._buildKey({ id });
+          const entry = await kv.get(key);
+          if (entry && entry.value && entry.operation !== 'DEL' && entry.operation !== 'PURGE') {
+            results.push(JSON.parse(new TextDecoder().decode(entry.value)));
+          }
+        }
+        return results;
+      }
+    }
+    // Fallback to primary key or full scan
+    let keys: string[] = [];
+    if (where && where.id !== undefined) {
+      const shard = this._getShard(where.id);
+      const prefix = `${this.modelName}.shard_${shard}.`;
+      const iter = await kv.keys(prefix + '>');
+      for await (const key of iter) keys.push(key);
+    } else {
+      for (let shard = 0; shard < this.SHARD_COUNT; shard++) {
+        const prefix = `${this.modelName}.shard_${shard}.`;
+        const iter = await kv.keys(prefix + '>');
+        for await (const key of iter) {
+          keys.push(key);
+        }
+      }
     }
     const results = [];
     for (const key of keys) {
       const entry = await kv.get(key);
       if (entry) {
         const value = JSON.parse(new TextDecoder().decode(entry.value));
-        // Optionally filter by query.where
-        if (!query.where || Object.entries(query.where).every(([k, v]) => value[k] === v)) {
+        if (!where || Object.entries(where).every(([k, v]) => value[k] === v)) {
           results.push(value);
         }
       }
@@ -98,6 +188,39 @@ export class Model {
     const current = JSON.parse(new TextDecoder().decode(entry.value));
     const updated = { ...current, ...values };
     await kv.put(key, new TextEncoder().encode(JSON.stringify(updated)));
+    // Update indexes if indexed fields changed (multi-value)
+    for (const field of this.indexes) {
+      if (values[field] !== undefined && values[field] !== current[field]) {
+        // Remove from old index
+        const oldIndexKey = this._buildIndexKey(field, current[field]);
+        let oldIds: number[] = [];
+        const oldIndexEntry = await kv.get(oldIndexKey);
+        if (oldIndexEntry && oldIndexEntry.value) {
+          const raw = new TextDecoder().decode(oldIndexEntry.value);
+          if (raw.trim()) {
+            oldIds = JSON.parse(raw);
+          }
+        }
+        oldIds = oldIds.filter((id: number) => id !== updated.id);
+        if (oldIds.length > 0) {
+          await kv.put(oldIndexKey, new TextEncoder().encode(JSON.stringify(oldIds)));
+        } else {
+          await kv.delete(oldIndexKey);
+        }
+        // Add to new index
+        const newIndexKey = this._buildIndexKey(field, values[field]);
+        let newIds: number[] = [];
+        const newIndexEntry = await kv.get(newIndexKey);
+        if (newIndexEntry && newIndexEntry.value) {
+          const raw = new TextDecoder().decode(newIndexEntry.value);
+          if (raw.trim()) {
+            newIds = JSON.parse(raw);
+          }
+        }
+        if (!newIds.includes(updated.id)) newIds.push(updated.id);
+        await kv.put(newIndexKey, new TextEncoder().encode(JSON.stringify(newIds)));
+      }
+    }
     return updated;
   }
 
@@ -108,6 +231,30 @@ export class Model {
   static async destroy(query: any) {
     const kv: KV = this.sequelize.getKV();
     const key = this._buildKey(query.where);
+    const entry = await kv.get(key);
+    if (entry) {
+      const value = JSON.parse(new TextDecoder().decode(entry.value));
+      // Remove from all indexes (multi-value)
+      for (const field of this.indexes) {
+        if (value[field] !== undefined) {
+          const indexKey = this._buildIndexKey(field, value[field]);
+          let ids: number[] = [];
+          const indexEntry = await kv.get(indexKey);
+          if (indexEntry && indexEntry.value) {
+            const raw = new TextDecoder().decode(indexEntry.value);
+            if (raw.trim()) {
+              ids = JSON.parse(raw);
+            }
+          }
+          ids = ids.filter((id: number) => id !== value.id);
+          if (ids.length > 0) {
+            await kv.put(indexKey, new TextEncoder().encode(JSON.stringify(ids)));
+          } else {
+            await kv.delete(indexKey);
+          }
+        }
+      }
+    }
     await kv.delete(key);
   }
 
@@ -139,16 +286,6 @@ export class Model {
       }
     })();
     return watcher; // Allow caller to call watcher.stop() to clean up
-  }
-
-  /**
-   * Build a storage key for the record (by primary key).
-   * @param values - The record values
-   * @returns The storage key string
-   */
-  static _buildKey(values: any) {
-    // Assume primary key is 'id' for now
-    return this.modelName + '.' + values.id;
   }
 }
 
