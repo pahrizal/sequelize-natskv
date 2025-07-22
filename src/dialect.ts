@@ -32,11 +32,35 @@ export default async function initNatsDialect(sequelize: any): Promise<void> {
   // Define a base model class to override CRUD methods
   // Define base model class overriding CRUD (using any to bypass type checks)
   class NatsModel extends (Model as any) {
+    /**
+     * Subscribers for model changes: callback and optional columns filter
+     */
+    static subscribers: Array<{ callback: Function; columns?: string[] }> = [];
+    /**
+     * Subscribe to row changes. Options.columns filters notifications to those columns.
+     */
+    static subscribe(callback: Function, options?: { columns?: string[] }) {
+      this.subscribers.push({ callback, columns: options?.columns });
+    }
+    /**
+     * Unsubscribe a previously added callback
+     */
+    static unsubscribe(callback: Function) {
+      this.subscribers = this.subscribers.filter(s => s.callback !== callback);
+    }
     static kv: KV = kv;
     static async create(values: any) {
       const key = values.id.toString();
       await kv.put(key, Buffer.from(JSON.stringify(values)));
-      return this.build(values);
+      const instance = this.build(values);
+      // notify subscribers of creation
+      const changedCols = Object.keys(values);
+      for (const sub of (this as any).subscribers) {
+        if (!sub.columns || sub.columns.some((c: string) => changedCols.includes(c))) {
+          sub.callback({ operation: 'create', data: instance, changedColumns: changedCols });
+        }
+      }
+      return instance;
     }
     static async findByPk(pk: any) {
       try {
@@ -53,11 +77,36 @@ export default async function initNatsDialect(sequelize: any): Promise<void> {
       const existing = JSON.parse(Buffer.from(entry.value).toString());
       const updated = { ...existing, ...values };
       await kv.put(pk.toString(), Buffer.from(JSON.stringify(updated)));
-      return [1, [this.build(updated)]];
+      const instanceOld = this.build(existing);
+      const instanceNew = this.build(updated);
+      // notify subscribers of update
+      const changedCols = Object.keys(values);
+      for (const sub of (this as any).subscribers) {
+        if (!sub.columns || sub.columns.some((c: string) => changedCols.includes(c))) {
+          sub.callback({ operation: 'update', old: instanceOld, new: instanceNew, changedColumns: changedCols });
+        }
+      }
+      return [1, [instanceNew]];
     }
     static async destroy(options: any) {
       const pk = options.where.id;
+      // fetch existing before delete
+      let existing: any = null;
+      try {
+        const entry = await kv.get(pk.toString());
+        existing = JSON.parse(Buffer.from(entry.value).toString());
+      } catch {}
       await kv.delete(pk.toString());
+      // notify subscribers of deletion
+      if (existing) {
+        const instanceOld = this.build(existing);
+        const changedCols = Object.keys(existing);
+        for (const sub of (this as any).subscribers) {
+          if (!sub.columns || sub.columns.some((c: string) => changedCols.includes(c))) {
+            sub.callback({ operation: 'destroy', old: instanceOld, changedColumns: changedCols });
+          }
+        }
+      }
       return 1;
     }
     static async findAll() {
