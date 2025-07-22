@@ -1,8 +1,8 @@
 {
   "name": "sequelize-natskv",
   "version": "1.0.0",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "index.js",
+  "types": "index.d.ts",
   "author": "Pahrizal Marup <pahrizal.marup@alexys.com.au>",
   "license": "MIT",
   "dependencies": {
