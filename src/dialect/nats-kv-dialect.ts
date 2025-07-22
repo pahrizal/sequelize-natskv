@@ -1,7 +1,6 @@
-import { NatsKvConnectionManager } from './connection-manager';
-import { NatsKvQueryGenerator } from './query-generator';
-import { NatsKvQueryInterface } from './query-interface';
-import { DataTypes } from 'sequelize';
+import { NatsKvConnectionManager } from "./connection-manager";
+import { NatsKvQueryGenerator } from "./query-generator";
+import { NatsKvQueryInterface } from "./query-interface";
 
 export class NatsKvDialect {
   public readonly connectionManager: NatsKvConnectionManager;
@@ -9,18 +8,18 @@ export class NatsKvDialect {
   public readonly queryInterface: NatsKvQueryInterface;
 
   public static readonly supports = {
-    'DEFAULT': false,
-    'DEFAULT VALUES': false,
-    'VALUES ()': false,
-    'LIMIT ON UPDATE': false,
-    'ON DUPLICATE KEY': false,
-    'ORDER NULLS': false,
-    'UNION': false,
-    'UNION ALL': false,
-    'RIGHT JOIN': false,
-    'FULL OUTER JOIN': false,
-    'CROSS JOIN': false,
-    'NATURAL JOIN': false,
+    DEFAULT: false,
+    "DEFAULT VALUES": false,
+    "VALUES ()": false,
+    "LIMIT ON UPDATE": false,
+    "ON DUPLICATE KEY": false,
+    "ORDER NULLS": false,
+    UNION: false,
+    "UNION ALL": false,
+    "RIGHT JOIN": false,
+    "FULL OUTER JOIN": false,
+    "CROSS JOIN": false,
+    "NATURAL JOIN": false,
     autoIncrement: {
       identityInsert: false,
       defaultValue: false,
@@ -76,7 +75,10 @@ export class NatsKvDialect {
       dialect: this,
       sequelize,
     });
-    this.queryInterface = new NatsKvQueryInterface(sequelize, this.queryGenerator);
+    this.queryInterface = new NatsKvQueryInterface(
+      sequelize,
+      this.queryGenerator
+    );
   }
 
   public canBackupTable(): boolean {
@@ -84,22 +86,10 @@ export class NatsKvDialect {
   }
 
   public getDefaultSchema(): string {
-    return 'default';
+    return "default";
   }
 
   public static getDefaultPort(): number {
     return 4222;
-  }
-
-  public getDataTypeString(dataType: any): string {
-    if (dataType instanceof DataTypes.STRING) return 'STRING';
-    if (dataType instanceof DataTypes.INTEGER) return 'INTEGER';
-    if (dataType instanceof DataTypes.BOOLEAN) return 'BOOLEAN';
-    if (dataType instanceof DataTypes.JSON) return 'JSON';
-    if (dataType instanceof DataTypes.DATE) return 'DATE';
-    if (dataType instanceof DataTypes.FLOAT) return 'FLOAT';
-    if (dataType instanceof DataTypes.DECIMAL) return 'DECIMAL';
-    if (dataType instanceof DataTypes.TEXT) return 'TEXT';
-    return 'STRING';
   }
 }
