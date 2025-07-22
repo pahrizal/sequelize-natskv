@@ -59,6 +59,13 @@ async function main() {
   // Delete
   await User.destroy({ where: { id: 1 } });
 
+  // Watch for changes (remember to stop the watcher to prevent memory leaks)
+  const watcher = await User.watch({ where: { id: 1 } }, (change) => {
+    console.log('User changed:', change);
+  });
+  // ... later, when done watching:
+  watcher.stop();
+
   await sequelize.close();
 }
 ```
@@ -93,7 +100,7 @@ async function main() {
 - `findAll({ where })`: Find all records matching any field(s).
 - `update(values, { where })`: Update a record by primary key or other fields.
 - `destroy({ where })`: Delete a record by primary key or other fields.
-- `watch({ where, columns }, callback)`: Subscribe to changes on a row or columns (experimental).
+- `watch({ where, columns }, callback)`: Subscribe to changes on a row or columns (experimental). **Returns a watcher object; call `watcher.stop()` to clean up and prevent memory leaks.**
 
 ---
 

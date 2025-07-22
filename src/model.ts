@@ -115,6 +115,7 @@ export class Model {
    * Watch for changes on a row or columns (experimental).
    * @param options - { where?: any; columns?: string[] }
    * @param callback - Function called on change
+   * @returns The watcher object (call watcher.stop() to clean up)
    */
   static async watch(options: { where?: any; columns?: string[] }, callback: (change: any) => void) {
     const kv: KV = this.sequelize.getKV();
@@ -137,6 +138,7 @@ export class Model {
         lastValue = value;
       }
     })();
+    return watcher; // Allow caller to call watcher.stop() to clean up
   }
 
   /**
