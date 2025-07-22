@@ -14,8 +14,9 @@ A lightweight [Sequelize](https://sequelize.org/) dialect-like ORM using [NATS K
 ---
 
 ## Installation
+We recommend using **yarn** for dependency management and scripts.
 ```bash
-npm install sequelize-natskv nats
+yarn add sequelize-natskv nats
 ```
 
 ---
@@ -168,20 +169,50 @@ const age25 = await User.findAll({ where: { age: 25 } });
 - `findAll({ where })`: Find all records matching any field(s).
 - `update(values, { where })`: Update a record by primary key or other fields.
 - `destroy({ where })`: Delete a record by primary key or other fields.
+- `truncate()`: Delete all records and indexes for the model (dangerous, irreversible, fast bulk wipe).
 - `watch({ where, columns }, callback)`: Subscribe to changes on a row or columns (experimental). **Returns a watcher object; call `watcher.stop()` to clean up and prevent memory leaks.**
+
+---
+
+## Truncate Example
+
+You can quickly delete all records and indexes for a model using `truncate`:
+
+```ts
+// Remove all users and all user indexes
+await User.truncate();
+// User.findAll() will now return []
+```
+
+This is useful for tests, development, or resetting a dataset. Use with caution in production!
+
+---
+
+## Environment Variables & Credentials
+
+This project uses [dotenv](https://www.npmjs.com/package/dotenv) to load NATS credentials and server URLs from environment variables. Create a `.env` file in your project root (see `.env.example`):
+
+```env
+# .env
+NATS_SERVERS=nats://127.0.0.1:4222
+NATS_USER=your_nats_username
+NATS_PASS=your_nats_password
+```
+
+All test files and examples will automatically load these values. **Never commit your real .env to version control.**
 
 ---
 
 ## Development
 ```bash
 # Install dependencies
-npm install
+yarn install
 
 # Run tests
-npm test
+yarn test
 
 # Build for publishing
-npm run build
+yarn build
 ```
 
 ---

@@ -1,5 +1,7 @@
 import { NatsKVSequelize } from '../src/nats-kv-sequelize';
 import { createModel } from '../src/model';
+import dotenv from 'dotenv';
+dotenv.config();
 
 describe('NATS KV ORM Stress Test', () => {
   const USER_COUNT = 1000;
@@ -22,10 +24,10 @@ describe('NATS KV ORM Stress Test', () => {
 
   beforeAll(async () => {
     sequelize = new NatsKVSequelize({
-      servers: ['nats://127.0.0.1:4222'],
+      servers: process.env.NATS_SERVERS ? process.env.NATS_SERVERS.split(',') : ['nats://127.0.0.1:4222'],
       bucket: 'unity-stress',
-      user: 'aptus-unity',
-      pass: 'Ry7mP9kL4vB2x5',
+      user: process.env.NATS_USER,
+      pass: process.env.NATS_PASS,
     });
     await sequelize.authenticate();
     User = createModel(sequelize, 'UserStress', {

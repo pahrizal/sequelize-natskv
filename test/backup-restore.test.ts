@@ -1,4 +1,6 @@
 import { NatsKVSequelize } from '../src/nats-kv-sequelize';
+import dotenv from 'dotenv';
+dotenv.config();
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -10,10 +12,10 @@ describe('NatsKVSequelize backup and restore (model use case)', () => {
 
   beforeAll(async () => {
     orm = new NatsKVSequelize({
-      servers: ['localhost:4222'],
+      servers: process.env.NATS_SERVERS ? process.env.NATS_SERVERS.split(',') : ['localhost:4222'],
       bucket: testBucket,
-      user: 'aptus-unity',
-      pass: 'Ry7mP9kL4vB2x5',
+      user: process.env.NATS_USER,
+      pass: process.env.NATS_PASS,
     });
     await orm.authenticate();
     User = orm.define('User', {

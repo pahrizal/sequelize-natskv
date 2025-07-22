@@ -1,13 +1,15 @@
 import { NatsKVSequelize } from '../src/nats-kv-sequelize';
 import { createModel } from '../src/model';
+import dotenv from 'dotenv';
+dotenv.config();
 const { connect } = require('nats');
 
 async function clearBucket(bucket: any) {
   // Connect to NATS and clear all keys in the given bucket
   const nc = await connect({
-    servers: ['nats://127.0.0.1:4222'],
-    user: 'aptus-unity',
-    pass: 'Ry7mP9kL4vB2x5',
+    servers: process.env.NATS_SERVERS ? process.env.NATS_SERVERS.split(',') : ['nats://127.0.0.1:4222'],
+    user: process.env.NATS_USER,
+    pass: process.env.NATS_PASS,
   });
   const js = nc.jetstream();
   const kv = await js.views.kv(bucket);
@@ -26,10 +28,10 @@ describe('Model.truncate', () => {
   beforeAll(async () => {
     await clearBucket(bucket);
     sequelize = new NatsKVSequelize({
-      servers: ['nats://127.0.0.1:4222'],
+      servers: process.env.NATS_SERVERS ? process.env.NATS_SERVERS.split(',') : ['nats://127.0.0.1:4222'],
       bucket,
-      user: 'aptus-unity',
-      pass: 'Ry7mP9kL4vB2x5',
+      user: process.env.NATS_USER,
+      pass: process.env.NATS_PASS,
     });
     await sequelize.authenticate();
     User = createModel(sequelize, 'User', {
