@@ -6,7 +6,7 @@ describe('NATS KV dialect CRUD', () => {
   let User: any;
 
   beforeAll(async () => {
-    sequelize = await createSequelizeWithNats({ url: 'localhost:4222', bucket: 'test' });
+    sequelize = await createSequelizeWithNats({ url: 'localhost:4222', bucket: 'test', useMemory: true });
     User = sequelize.define('User', {
       id: {
         type: DataTypes.STRING,

@@ -6,7 +6,7 @@ describe('Model subscription API', () => {
   let Item: any;
 
   beforeAll(async () => {
-    sequelize = await createSequelizeWithNats({ url: 'localhost:4222', bucket: 'subtest' });
+    sequelize = await createSequelizeWithNats({ url: 'localhost:4222', bucket: 'subtest', useMemory: true });
     Item = sequelize.define('Item', {
       id: { type: DataTypes.STRING, primaryKey: true },
       name: DataTypes.STRING,

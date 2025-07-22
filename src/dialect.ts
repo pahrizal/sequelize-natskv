@@ -6,11 +6,11 @@ import { connect, JetStreamClient, KV } from 'nats';
  */
 export default async function initNatsDialect(sequelize: any): Promise<void> {
   // Access dialectOptions (untyped)
-  const opts = sequelize.options.dialectOptions as { url: string; bucket: string };
+  const opts = sequelize.options.dialectOptions as { url: string; bucket: string, useMemory: boolean };
   let kv: any;
   let nc: any;
   // For tests against localhost, use in-memory KV store
-  if (opts.url === 'localhost:4222') {
+  if (opts.useMemory) {
     class InMemoryKV {
       store = new Map<string, Buffer>();
       async put(key: string, value: Buffer) { this.store.set(key, value); }
