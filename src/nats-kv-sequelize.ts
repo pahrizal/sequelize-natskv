@@ -91,5 +91,56 @@ export class NatsKVSequelize {
     if (this.nc) await this.nc.close();
   }
 
+  /**
+   * Backup all key-value pairs in the bucket to a JSON file.
+   * @param filePath - The file path to write the backup to
+   */
+  async backup(filePath: string) {
+    if (!this.kv) throw new Error('Not connected');
+    const keys = [];
+    const iter = await this.kv.keys();
+    for await (const key of iter) {
+      keys.push(key);
+    }
+    const data: Record<string, any> = {};
+    for (const key of keys) {
+      const entry = await this.kv.get(key);
+      if (entry && entry.value) {
+        data[key] = {
+          value: Buffer.from(entry.value).toString('base64'),
+          revision: entry.revision,
+        };
+      }
+    }
+    const fs = await import('fs/promises');
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  /**
+   * Restore all key-value pairs from a JSON file into the bucket.
+   * @param filePath - The file path to read the backup from
+   * @param options - { clear: boolean } If true, clear the bucket before restoring
+   */
+  async restore(filePath: string, options: { clear?: boolean } = {}) {
+    if (!this.kv) throw new Error('Not connected');
+    const fs = await import('fs/promises');
+    const content = await fs.readFile(filePath, 'utf-8');
+    const data = JSON.parse(content);
+    if (options.clear) {
+      const keys = [];
+      const iter = await this.kv.keys();
+      for await (const key of iter) {
+        keys.push(key);
+      }
+      for (const key of keys) {
+        await this.kv.delete(key);
+      }
+    }
+    for (const [key, entry] of Object.entries(data) as [string, any][]) {
+      const value = Buffer.from(entry.value, 'base64');
+      await this.kv.put(key, value);
+    }
+  }
+
   // TODO: Add watch/subscribe feature for row/column changes
 } 
